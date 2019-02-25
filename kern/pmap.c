@@ -137,7 +137,6 @@ mem_init(void)
 	// create initial page directory.
 	kern_pgdir = (pde_t *) boot_alloc(PGSIZE);
 	memset(kern_pgdir, 0, PGSIZE);
-
 	//////////////////////////////////////////////////////////////////////
 	// Recursively insert PD in itself as a page table, to form
 	// a virtual page table at virtual address UVPT.
@@ -159,7 +158,8 @@ mem_init(void)
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
 	// LAB 3: Your code here.
-
+	envs = (struct Env*)boot_alloc(NENV*sizeof(struct Env));
+	memset(envs, 0 ,NENV * sizeof(struct Env));
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
 	// up the list of free physical pages. Once we've done so, all further
@@ -189,7 +189,7 @@ mem_init(void)
 	//    - the new image at UENVS  -- kernel R, user R
 	//    - envs itself -- kernel RW, user NONE
 	// LAB 3: Your code here.
-
+	boot_map_region(kern_pgdir, UENVS, PTSIZE, PADDR(envs), PTE_U);
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
@@ -201,7 +201,7 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
-	boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
+	boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);//PTE_U?
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE.
 	// Ie.  the VA range [KERNBASE, 2^32) should map to
@@ -557,10 +557,22 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
-
+	void *end = ROUNDUP((void *)va+len, PGSIZE);
+	pte_t *ent = NULL;
+	for(void *i = (void *)va;i < end;i += PGSIZE){
+		ent = pgdir_walk(env->env_pgdir, (void *)i, 0);
+		 if(((uint32_t)i > ULIM) || (*ent & perm) != perm)
+        {
+            if (i == va)
+                user_mem_check_addr = (uintptr_t) va;
+            else
+                user_mem_check_addr = *ent;
+            
+            return -E_FAULT;
+        }
+	}
 	return 0;
 }
-
 //
 // Checks that environment 'env' is allowed to access the range
 // of memory [va, va+len) with permissions 'perm | PTE_U | PTE_P'.

@@ -119,6 +119,7 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
+	env_free_list = NULL;
 	for(int i = NENV-1;i >= 0;i--){
 		envs[i].env_id = 0;
 		envs[i].env_pgdir = NULL;
@@ -192,7 +193,11 @@ env_setup_vm(struct Env *e)
 
 	// LAB 3: Your code here.
 	e->env_pgdir = page2kva(p);
-	memcpy(e->env_pgdir,kern_pgdir,PGSIZE);
+	for(int i = 0; i < UTOP / PTSIZE; ++i)
+		e->env_pgdir[i] = 0;
+
+	for(int i = UTOP / PTSIZE; i < 1024; ++i)
+		e->env_pgdir[i] = kern_pgdir[i];
 	p->pp_ref++;
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
@@ -530,8 +535,9 @@ env_run(struct Env *e)
 	curenv = e;
 	e->env_status = ENV_RUNNING;
 	e->env_runs++;
+
 	lcr3(PADDR(e->env_pgdir));
+	unlock_kernel();
 	env_pop_tf(&(e->env_tf));
-	//panic("env_run not yet implemented");
 }
 

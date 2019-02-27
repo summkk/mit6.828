@@ -264,7 +264,11 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	uintptr_t start_addr = KSTACKTOP - KSTKSIZE;    
+    for (size_t i=0; i<NCPU; i++) {
+        boot_map_region(kern_pgdir, (uintptr_t) start_addr, KSTKSIZE, PADDR(percpu_kstacks[i]), PTE_W | PTE_P);
+        start_addr -= KSTKSIZE + KSTKGAP;
+    }
 }
 
 // --------------------------------------------------------------
@@ -326,8 +330,10 @@ page_init(void)
 			pages[i].pp_link = page_free_list;
 			page_free_list = &pages[i];
 		}
-
 	}
+	int mpen = PGNUM(MPENTRY_PADDR);
+	pages[mpen+1].pp_link = pages[mpen].pp_link;
+	pages[mpen].pp_link = NULL;
 }
 
 //
@@ -600,7 +606,13 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	size = ROUNDUP(size,PGSIZE);
+	if(base + size > MMIOLIM || base + size < base)
+		panic("mmio_map_region overflow\n");
+	boot_map_region(kern_pgdir, base, size, pa, (PTE_W|PTE_PCD|PTE_PWT));
+	uintptr_t ret = base;
+	base += size;
+	return (void *)ret;
 }
 
 static uintptr_t user_mem_check_addr;

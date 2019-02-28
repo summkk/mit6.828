@@ -31,7 +31,7 @@ sched_yield(void)
 	// LAB 4: Your code here.
 	idle = curenv;
 	int cur_idx;
-	if(idle == NULL)
+	if(idle != NULL)
 		cur_idx = ENVX(idle->env_id);
 	else
 		cur_idx = 0;

@@ -25,16 +25,27 @@ pgfault(struct UTrapframe *utf)
 	//   (see <inc/memlayout.h>).
 
 	// LAB 4: Your code here.
-
+	if (!(err & FEC_WR) || !(((pte_t *)uvpt)[PGNUM(addr)] & PTE_COW)) {
+        panic("pgfault check failed\n");
+    }
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
 	// page to the old page's address.
 	// Hint:
 	//   You should make three system calls.
-
+    
 	// LAB 4: Your code here.
+	if(sys_page_alloc(0,(void*)PFTEMP, PTE_P|PTE_U|PTE_W) < 0)
+    	panic("pgfault page alloc failed\n");
+    
+    addr = ROUNDDOWN(addr, PGSIZE);
+    memcpy(PFTEMP, addr, PGSIZE);
 
-	panic("pgfault not implemented");
+    if(sys_page_map(0, PFTEMP, 0, addr, PTE_P|PTE_U|PTE_W) < 0)
+    	panic("pgfault page map failed\n");
+    if(sys_page_unmap(0, PFTEMP) < 0)
+    	panic("pgfault page unmap failed\n");
+    return;
 }
 
 //
@@ -54,7 +65,23 @@ duppage(envid_t envid, unsigned pn)
 	int r;
 
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	envid_t cur_id = sys_getenvid();
+	void *addr = (void *)(pn * PGSIZE);
+
+    if((((pte_t *)uvpt)[pn] & (PTE_W | PTE_COW))){
+    	if (sys_page_map(cur_id, addr, envid, addr, PTE_P | PTE_U|PTE_COW ) < 0) {
+            panic("duppage page map failed\n");
+        }
+        // set the parent page to be COW! 
+        if (sys_page_map(cur_id, addr, cur_id, addr, PTE_P | PTE_U|PTE_COW ) < 0) {
+            panic("duppage page map failed\n");
+        }
+    }
+    else{
+    	if(sys_page_map(cur_id, (void *)(pn * PGSIZE), envid, (void *)(pn * PGSIZE),PTE_P | PTE_U) < 0)
+    		panic("duppage page map failed\n");
+    }
+
 	return 0;
 }
 
@@ -78,7 +105,28 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	set_pgfault_handler(pgfault);
+	envid_t cur_id = sys_exofork();
+	if(cur_id < 0)
+		panic("exofork failed\n");
+	if(cur_id == 0){//child
+		thisenv = envs+ENVX(sys_getenvid());
+		return 0;
+	}
+	//parent	
+	for(uintptr_t addr = UTEXT;addr < USTACKTOP; addr += PGSIZE){
+		if((uvpd[PDX(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_P) ) {
+            duppage(cur_id, PGNUM(addr));
+        }
+	}
+	// allocate a new page for the child's user exception stack
+    sys_page_alloc(cur_id, (void *)(UXSTACKTOP-PGSIZE), PTE_U | PTE_W | PTE_P);
+
+    extern void _pgfault_upcall();
+    sys_env_set_pgfault_upcall(cur_id, _pgfault_upcall);
+
+    sys_env_set_status(cur_id, ENV_RUNNABLE);
+    return cur_id;
 }
 
 // Challenge!
